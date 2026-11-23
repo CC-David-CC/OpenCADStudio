@@ -47,7 +47,7 @@ export function mount(host) {
   status.setAttribute('role', 'status');
   status.textContent = 'Starting OpenCADStudio…';
   const source = document.createElement('a');
-  source.href = new URL('./legal/opencadstudio-browser-source.tar.gz', import.meta.url).href;
+  source.href = new URL('./legal/opencadstudio-browser-source.tar.xz', import.meta.url).href;
   source.download = '';
   source.textContent = 'Source';
   footer.append(status, source);

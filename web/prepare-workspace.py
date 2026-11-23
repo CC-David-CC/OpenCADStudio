@@ -38,5 +38,9 @@ markup = re.sub(r'<link\s+rel="manifest"\s+href="app\.webmanifest"\s*/?>', "", m
 index.write_text(markup, encoding="utf-8")
 (staging / "workspace-start.mjs").write_text(module, encoding="utf-8")
 (staging / "workspace-splash.mjs").write_text(splash, encoding="utf-8")
+# The standalone site generates these feeds and video thumbnails in CI.
+# Keep this package self-contained and retain the app's built-in credits.
+for name in ("supporters.json", "videos.json"):
+    (staging / name).write_text("[]\n", encoding="utf-8")
 for name in ("sw.js", "app.webmanifest", "ocs-control.js"):
     (staging / name).unlink(missing_ok=True)

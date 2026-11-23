@@ -17,10 +17,7 @@ def prepare_script(match):
     global module, splash
     attributes, source = match.groups()
     if "TrunkApplicationStarted" in source:
-        loader = re.search(r"""from ['"](\./[^'"]+\.js)['"]""", source)
-        if loader is None:
-            raise ValueError("Cannot find the Trunk-generated WASM loader.")
-        module = loader[1]
+        module = source
         return '<script type="module" src="./workspace-start.mjs"></script>'
     if "locale-labels.json" in source:
         splash = source
@@ -39,16 +36,7 @@ if not module or not splash:
     raise SystemExit("Trunk did not generate the expected app and splash scripts.")
 markup = re.sub(r'<link\s+rel="manifest"\s+href="app\.webmanifest"\s*/?>', "", markup)
 index.write_text(markup, encoding="utf-8")
-(staging / "workspace-start.mjs").write_text(
-    f'import init from "{module}";\n'
-    'try {\n'
-    '  await init();\n'
-    '} catch (error) {\n'
-    '  document.querySelector("#loading .sub").textContent = "The CAD editor could not start.";\n'
-    '  throw error;\n'
-    '}\n',
-    encoding="utf-8",
-)
+(staging / "workspace-start.mjs").write_text(module, encoding="utf-8")
 (staging / "workspace-splash.mjs").write_text(splash, encoding="utf-8")
 for name in ("sw.js", "app.webmanifest", "ocs-control.js"):
     (staging / name).unlink(missing_ok=True)

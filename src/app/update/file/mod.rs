@@ -192,14 +192,26 @@ impl OpenCADStudio {
                 name,
                 bytes,
                 read_only,
+                request_id,
             } => {
                 if self.opening.is_some() {
                     host_bridge::requeue_front(HostCommand::Open {
                         name,
                         bytes,
                         read_only,
+                        request_id,
                     });
                     return Task::none();
+                }
+                if host_bridge::is_workspace_mode() {
+                    let Some(request_id) = request_id else {
+                        return Task::none();
+                    };
+                    let task = self.open_web_bytes(name, bytes);
+                    if let Some(opening) = &self.opening {
+                        host_bridge::track_workspace_open(opening.id, request_id);
+                    }
+                    return task;
                 }
                 for tab in &self.tabs {
                     if !tab.is_start {
@@ -263,6 +275,37 @@ impl OpenCADStudio {
                 error,
             } => {
                 let matched = host_bridge::take_pending_save(save_id.as_deref());
+                if host_bridge::is_workspace_mode() {
+                    let Some(save) = matched else {
+                        return Task::none();
+                    };
+                    crate::io::fs_access::end_web_save(save.tab_id);
+                    let mut clean = false;
+                    if ok {
+                        let label =
+                            host_bridge::saved_label_from_ack(name.as_deref(), Some(&save.filename));
+                        if let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == save.tab_id) {
+                            tab.current_path = label.as_ref().map(std::path::PathBuf::from);
+                            tab.scene.document.version = save.version;
+                            tab.recovery_save_as_required = false;
+                            clean = tab.scene.geometry_epoch == save.geometry_epoch
+                                && tab.edit_revision == save.edit_revision
+                                && tab.scene.camera_generation == save.camera_generation;
+                            if clean {
+                                tab.dirty = false;
+                                tab.scene.note_tables_saved();
+                            }
+                        }
+                        if let Some(filename) = label {
+                            self.command_line
+                                .push_output(crate::tf!("Saved: {filename}").as_ref());
+                        }
+                    } else {
+                        self.command_line
+                            .push_error(error.as_deref().unwrap_or("Host save failed"));
+                    }
+                    return self.finish_web_save(clean);
+                }
                 if ok {
                     let saved_label = host_bridge::saved_label_from_ack(
                         name.as_deref(),

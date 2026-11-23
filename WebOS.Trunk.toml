@@ -1,0 +1,16 @@
+[build]
+target = "web-app.html"
+dist = "dist/webos"
+public_url = "./"
+html_output = "index.html"
+filehash = false
+
+[[hooks]]
+stage = "post_build"
+command = "sh"
+command_arguments = ["scripts/build-web-worker.sh"]
+
+[[hooks]]
+stage = "post_build"
+command = "python3"
+command_arguments = ["web/prepare-workspace.py"]

@@ -22,6 +22,8 @@ pub struct PendingSave {
     pub geometry_epoch: u64,
     pub edit_revision: u64,
     pub camera_generation: u64,
+    #[cfg(target_arch = "wasm32")]
+    pub version: document::DxfVersion,
 }
 
 /// Return `true` when query string `search` contains `key=expected`.
@@ -98,6 +100,7 @@ mod web {
             name: String,
             bytes: Vec<u8>,
             read_only: bool,
+            request_id: Option<String>,
         },
         RequestSave {
             format: Option<String>,
@@ -112,11 +115,14 @@ mod web {
 
     static EMBED_MODE: OnceLock<bool> = OnceLock::new();
     static AUTOMATION_ALLOWED: OnceLock<bool> = OnceLock::new();
+    static WORKSPACE_MODE: OnceLock<bool> = OnceLock::new();
     static INSTALLED: OnceLock<()> = OnceLock::new();
     static COMMAND_QUEUE: Mutex<VecDeque<HostCommand>> = Mutex::new(VecDeque::new());
     static PENDING_SAVES: Mutex<VecDeque<PendingSave>> = Mutex::new(VecDeque::new());
     static NEXT_SAVE_ID: AtomicU64 = AtomicU64::new(1);
     static DIRTY_STATE: AtomicU8 = AtomicU8::new(0);
+    static WORKSPACE_STATE: Mutex<Option<(Option<u64>, bool, bool)>> = Mutex::new(None);
+    static WORKSPACE_OPEN: Mutex<Option<(u64, String)>> = Mutex::new(None);
 
     fn has_query_flag(key: &str, expected: &str) -> bool {
         web_sys::window()
@@ -131,6 +137,10 @@ mod web {
 
     pub fn is_automation_allowed() -> bool {
         *AUTOMATION_ALLOWED.get_or_init(|| !is_embed_mode() || has_query_flag("automation", "1"))
+    }
+
+    pub fn is_workspace_mode() -> bool {
+        *WORKSPACE_MODE.get_or_init(|| is_embed_mode() && has_query_flag("workspace", "1"))
     }
 
     pub fn holds_dirty_for_ack(filename: &str) -> bool {
@@ -190,6 +200,7 @@ mod web {
                                 name,
                                 bytes,
                                 read_only,
+                                request_id: str_prop(&data, "requestId"),
                             })
                         }
                         "ocs:request-save" => Some(HostCommand::RequestSave {
@@ -256,8 +267,50 @@ mod web {
         take_pending_save_in(&mut queue, save_id)
     }
 
-    pub fn emit_loaded(name: &str) {
-        post_to_host("ocs:loaded", &[("name", JsValue::from_str(name))], None);
+    pub fn emit_request_open() {
+        post_to_host("ocs:request-open", &[], None);
+    }
+
+    pub fn track_workspace_open(job: u64, request_id: String) {
+        *WORKSPACE_OPEN.lock().unwrap_or_else(|error| error.into_inner()) = Some((job, request_id));
+    }
+
+    pub fn take_workspace_open(job: u64) -> Option<String> {
+        let mut tracked = WORKSPACE_OPEN.lock().unwrap_or_else(|error| error.into_inner());
+        tracked.take_if(|(id, _)| *id == job).map(|(_, request)| request)
+    }
+
+    pub fn emit_loaded(name: &str, request_id: Option<String>, tab_id: u64) {
+        let mut fields = vec![("name", JsValue::from_str(name))];
+        if let Some(request_id) = request_id {
+            fields.push(("requestId", JsValue::from_str(&request_id)));
+            fields.push(("tabId", JsValue::from_str(&tab_id.to_string())));
+        }
+        post_to_host("ocs:loaded", &fields, None);
+    }
+
+    pub fn emit_workspace_state(tab: Option<u64>, dirty: bool, saving: bool, opening: Option<u64>) {
+        let mut tracked = WORKSPACE_OPEN.lock().unwrap_or_else(|error| error.into_inner());
+        if tracked.as_ref().is_some_and(|(id, _)| Some(*id) != opening) {
+            if let Some((_, request_id)) = tracked.take() {
+                post_to_host("ocs:open-ended", &[("requestId", JsValue::from_str(&request_id))], None);
+            }
+        }
+        let mut state = WORKSPACE_STATE.lock().unwrap_or_else(|error| error.into_inner());
+        let next = (tab, dirty, saving);
+        if *state == Some(next) {
+            return;
+        }
+        *state = Some(next);
+        post_to_host(
+            "ocs:state",
+            &[
+                ("tabId", tab.map_or(JsValue::NULL, |id| JsValue::from_str(&id.to_string()))),
+                ("dirty", JsValue::from_bool(dirty)),
+                ("saving", JsValue::from_bool(saving)),
+            ],
+            None,
+        );
     }
 
     pub fn emit_dirty(dirty: bool) {
@@ -287,6 +340,8 @@ mod web {
         geometry_epoch: u64,
         edit_revision: u64,
         camera_generation: u64,
+        version: document::DxfVersion,
+        save_as: bool,
     ) -> String {
         let save_id = format!("save-{}", NEXT_SAVE_ID.fetch_add(1, Ordering::Relaxed));
         {
@@ -300,6 +355,7 @@ mod web {
                     geometry_epoch,
                     edit_revision,
                     camera_generation,
+                    version,
                 },
             );
         }
@@ -312,6 +368,8 @@ mod web {
                 ("name", JsValue::from_str(name)),
                 ("format", JsValue::from_str(format)),
                 ("saveId", JsValue::from_str(&save_id)),
+                ("tabId", JsValue::from_str(&tab_id.to_string())),
+                ("saveAs", JsValue::from_bool(save_as)),
                 ("buffer", buffer.clone().into()),
             ],
             Some(&buffer),

@@ -25,6 +25,10 @@ impl OpenCADStudio {
         }
         #[cfg(target_arch = "wasm32")]
         {
+            if crate::io::host_bridge::is_workspace_mode() {
+                crate::io::host_bridge::emit_request_open();
+                return Task::none();
+            }
             // The browser picker + parse happen inside `pick_and_load_web`;
             // the real name is unknown until then, so show a generic label
             // meanwhile.
@@ -534,7 +538,7 @@ impl OpenCADStudio {
         // silently replaces the other tab's. Warn at open time — the
         // desktop identifies drawings by full path and needs no such check.
         #[cfg(target_arch = "wasm32")]
-        if self.tab_showing(&path).is_some() {
+        if !crate::io::host_bridge::is_workspace_mode() && self.tab_showing(&path).is_some() {
             self.command_line.push_warning(
                 crate::tf!(
                     "\"{}\" is already open in another tab. On the web both \

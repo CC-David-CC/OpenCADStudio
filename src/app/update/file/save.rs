@@ -767,12 +767,36 @@ impl OpenCADStudio {
         //   a Save As whose re-pick failed falls back to the download, and
         //   the stale handle from the previous format must not receive the
         //   fallback bytes (a .dwg file must never silently hold DXF).
-        let tab_exists = self.tabs.iter().position(|tab| tab.id == tab_id).is_some();
-        let target_ext = crate::io::fs_access::take_pending_save_ext(tab_id);
+        use crate::io::host_bridge;
+
+        let tab_exists = self.tabs.iter().any(|tab| tab.id == tab_id);
+        let target = crate::io::fs_access::take_pending_save_target(tab_id);
+        let target_ext = target.as_ref().map(|(ext, _)| ext.as_str());
+        if host_bridge::is_workspace_mode() {
+            let Some((format, save_as)) = target.as_ref().filter(|_| tab_exists) else {
+                crate::io::fs_access::end_web_save(tab_id);
+                return self.finish_web_save(false);
+            };
+            if matches!(format.as_str(), "dxf" | "dwg") {
+                host_bridge::emit_save(
+                    &filename,
+                    format,
+                    &bytes,
+                    tab_id,
+                    geometry_epoch,
+                    edit_revision,
+                    camera_generation,
+                    version,
+                    *save_as,
+                );
+                // Keep the in-flight slot until Files acknowledges this snapshot.
+                return Task::none();
+            }
+        }
         let write_in_place = tab_exists
             && crate::io::fs_access::write_or_download(
                 crate::io::fs_access::handle_ext(tab_id).as_deref(),
-                target_ext.as_deref(),
+                target_ext,
             );
         if !write_in_place {
             // Whatever handle is held is stale for these bytes (wrong
@@ -817,7 +841,7 @@ impl OpenCADStudio {
         }
         // The download is the only artifact of the save — fire it even if the
         // tab was closed while serialization was in flight.
-        if crate::io::host_bridge::is_embed_mode() {
+        if host_bridge::is_embed_mode() && !host_bridge::is_workspace_mode() {
             if let Some(fmt) = crate::io::host_bridge::cad_save_format(&filename) {
                 crate::io::host_bridge::emit_save(
                     &filename,
@@ -827,6 +851,8 @@ impl OpenCADStudio {
                     geometry_epoch,
                     edit_revision,
                     camera_generation,
+                    version,
+                    false,
                 );
             } else {
                 crate::sys::download_bytes(&filename, &bytes);
@@ -901,6 +927,13 @@ impl OpenCADStudio {
         // The save settled (download or in-place write): release the
         // in-flight slot the on_save_file guard refuses against.
         crate::io::fs_access::end_web_save(tab_id);
+        if crate::io::host_bridge::is_workspace_mode() {
+            // Only CAD saves reach Files. Downloaded conversions do not
+            // change the current drawing's identity or saved snapshot.
+            self.command_line
+                .push_output(crate::tf!("Downloaded: {filename}").as_ref());
+            return self.finish_web_save(false);
+        }
         let embed_mode = crate::io::host_bridge::is_embed_mode();
         let hold_for_host_ack = crate::io::host_bridge::holds_dirty_for_ack(&filename);
         let mut recent_task = if embed_mode {
@@ -1913,6 +1946,12 @@ impl OpenCADStudio {
         } else {
             self.default_save_format.clone()
         };
+        #[cfg(target_arch = "wasm32")]
+        if crate::io::host_bridge::is_workspace_mode()
+            && !matches!(crate::io::parse_save_format(&self.save_dialog_format).0, "dxf" | "dwg")
+        {
+            self.save_dialog_format = crate::io::DEFAULT_SAVE_FORMAT.to_string();
+        }
         let (ext, _) = crate::io::parse_save_format(&self.save_dialog_format);
         self.save_dialog_filename = self.tabs[tab_idx]
             .current_path
@@ -2164,7 +2203,9 @@ impl OpenCADStudio {
         // on_save_file refuses a second save while the slot is held) and
         // record the intended ext, which the completion half re-checks
         // against the retained handle before writing.
-        crate::io::fs_access::begin_web_save(tab_id, &ext);
+        let save_as = !self.save_plain_reuse_fs_handle
+            || self.tabs.iter().any(|tab| tab.id == tab_id && tab.recovery_save_as_required);
+        crate::io::fs_access::begin_web_save(tab_id, &ext, save_as);
         let bounds =
             crate::ui::wrap_bar::dropdown_bounds(crate::app::view::VIEWPORT_CAPTURE_BOUNDS_ID);
         let Some(bounds) = bounds else {

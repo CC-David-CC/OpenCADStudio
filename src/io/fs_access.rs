@@ -155,11 +155,8 @@ mod browser {
         /// seconds).
         static WEB_SAVE_IN_FLIGHT: RefCell<Option<u64>> = RefCell::new(None);
 
-        /// The format each tab's in-flight save is being serialized for —
-        /// the `target_ext` input of `write_or_download`, recorded at
-        /// capture time because the completion messages cannot carry it
-        /// (the bytes may outlive several rounds of tab state).
-        static PENDING_SAVE_EXTS: RefCell<HashMap<u64, String>> =
+        /// Destination format and Save As intent captured before serialization.
+        static PENDING_SAVE_TARGETS: RefCell<HashMap<u64, (String, bool)>> =
             RefCell::new(HashMap::new());
     }
 
@@ -198,10 +195,12 @@ mod browser {
     /// save is committed to a tab and a format — so `on_save_file` can
     /// refuse a second concurrent save and the completion half can check
     /// the bytes against the retained handle (`write_or_download`).
-    pub fn begin_web_save(tab_id: u64, ext: &str) {
-        PENDING_SAVE_EXTS.with(|exts| {
-            exts.borrow_mut()
-                .insert(tab_id, ext.trim_start_matches('.').to_ascii_lowercase());
+    pub fn begin_web_save(tab_id: u64, ext: &str, save_as: bool) {
+        PENDING_SAVE_TARGETS.with(|targets| {
+            targets.borrow_mut().insert(
+                tab_id,
+                (ext.trim_start_matches('.').to_ascii_lowercase(), save_as),
+            );
         });
         WEB_SAVE_IN_FLIGHT.with(|in_flight| in_flight.borrow_mut().replace(tab_id));
     }
@@ -216,8 +215,8 @@ mod browser {
                 *slot = None;
             }
         });
-        PENDING_SAVE_EXTS.with(|exts| {
-            exts.borrow_mut().remove(&tab_id);
+        PENDING_SAVE_TARGETS.with(|targets| {
+            targets.borrow_mut().remove(&tab_id);
         });
     }
 
@@ -227,11 +226,9 @@ mod browser {
         WEB_SAVE_IN_FLIGHT.with(|in_flight| *in_flight.borrow())
     }
 
-    /// Take the format `tab_id`'s serialized bytes were intended for —
-    /// consumed (once) by the completion handler to decide
-    /// write-through-handle vs download via `write_or_download`.
-    pub fn take_pending_save_ext(tab_id: u64) -> Option<String> {
-        PENDING_SAVE_EXTS.with(|exts| exts.borrow_mut().remove(&tab_id))
+    /// Consume the destination metadata when serialization completes.
+    pub fn take_pending_save_target(tab_id: u64) -> Option<(String, bool)> {
+        PENDING_SAVE_TARGETS.with(|targets| targets.borrow_mut().remove(&tab_id))
     }
 
     /// Feature-detect `showSaveFilePicker` — never assume it: Firefox and
@@ -403,7 +400,7 @@ mod browser {
 #[cfg(target_arch = "wasm32")]
 pub use browser::{
     begin_web_save, drop_handle, end_web_save, handle_ext, handle_name, pick_save_handle,
-    supported, take_pending_save_ext, web_save_in_flight, write_handle,
+    supported, take_pending_save_target, web_save_in_flight, write_handle,
 };
 
 #[cfg(test)]

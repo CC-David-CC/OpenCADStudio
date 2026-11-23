@@ -886,10 +886,16 @@ impl OpenCADStudio {
                 }
                 #[cfg(target_arch = "wasm32")]
                 let loaded_name = name.clone();
+                #[cfg(target_arch = "wasm32")]
+                let request_id = crate::io::host_bridge::take_workspace_open(open_id);
                 let task = self.on_file_opened(name, path, doc, caches, ifccad_session);
                 #[cfg(target_arch = "wasm32")]
                 if crate::io::host_bridge::is_embed_mode() {
-                    crate::io::host_bridge::emit_loaded(&loaded_name);
+                    crate::io::host_bridge::emit_loaded(
+                        &loaded_name,
+                        request_id,
+                        self.tabs[self.active_tab].id,
+                    );
                     let dirty = self.tabs.get(self.active_tab).is_some_and(|tab| tab.dirty);
                     crate::io::host_bridge::emit_dirty(dirty);
                 }

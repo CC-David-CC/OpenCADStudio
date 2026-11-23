@@ -1307,11 +1307,22 @@ impl OpenCADStudio {
             }
         }
         #[cfg(target_arch = "wasm32")]
-        crate::sys::set_unsaved_changes_warning(
-            self.tabs
+        {
+            let dirty = self.tabs
                 .iter()
-                .any(|tab| tab.dirty && tab.block_test.is_none()),
-        );
+                .any(|tab| tab.dirty && tab.block_test.is_none());
+            if crate::io::host_bridge::is_workspace_mode() {
+                let tab = self.tabs.get(self.active_tab).filter(|tab| !tab.is_start);
+                crate::io::host_bridge::emit_workspace_state(
+                    tab.map(|tab| tab.id),
+                    dirty,
+                    crate::io::fs_access::web_save_in_flight().is_some(),
+                    self.opening.as_ref().map(|opening| opening.id),
+                );
+            } else {
+                crate::sys::set_unsaved_changes_warning(dirty);
+            }
+        }
         if self.tabs[i].active_cmd.is_none() {
             self.block_palette.placing = None;
         }

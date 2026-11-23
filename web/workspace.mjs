@@ -3,7 +3,6 @@
 const extensions = ['.dxf', '.dwg'];
 const revision = /^[a-f0-9]{64}$/;
 const tabId = /^[0-9]+$/;
-const maximumDrawingBytes = 64 * 1024 * 1024;
 const basename = path => path.split('/').at(-1);
 const extension = name => extensions.find(ext => name.toLowerCase().endsWith(ext));
 
@@ -99,7 +98,6 @@ export function mount(host) {
     workspace();
     if (!revision.test(sha256)) throw Error('Files returned an invalid revision.');
     if (expected && expected !== sha256) throw Error('The drawing changed in Files. Open its current revision.');
-    if (data.byteLength > maximumDrawingBytes) throw Error('Open drawings larger than 64 MB in the desktop app.');
     const requestId = String(++nextOpen);
     const name = basename(path);
     const buffer = data.slice().buffer;
@@ -125,7 +123,6 @@ export function mount(host) {
     if (!extensions.includes(ext) || !(buffer instanceof ArrayBuffer) || !buffer.byteLength || !tabId.test(tab)) {
       throw Error('The editor returned an invalid drawing.');
     }
-    if (buffer.byteLength > maximumDrawingBytes) throw Error('Save drawings larger than 64 MB in the desktop app.');
     const previous = tabs.get(tab);
     let path = previous?.path;
     let expected = previous?.sha256;

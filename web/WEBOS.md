@@ -12,4 +12,4 @@ Install Rust with the `wasm32-unknown-unknown` target, Trunk, Python 3, and the 
 trunk build --config WebOS.Trunk.toml --release --locked
 ```
 
-Serve `dist/webos` alongside the WebOS mount and its stylesheet. The iframe and the parent Desktop share an origin. The CAD parser and serializer run in the bundled worker. The parent handles Files access and sends a save acknowledgement once the revision is confirmed. The embedded profile leaves the standalone build settings in `Trunk.toml` available.
+Serve `dist/webos` alongside the WebOS mount and its stylesheet. The iframe and the parent Desktop share an origin. The bundled editor and worker load their integrity-checked gzip WASM assets through the browser's DecompressionStream API. The parent handles Files access and sends a save acknowledgement once the revision is confirmed. The embedded profile leaves the standalone build settings in `Trunk.toml` available.

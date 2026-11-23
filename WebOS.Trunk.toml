@@ -8,9 +8,4 @@ filehash = false
 [[hooks]]
 stage = "post_build"
 command = "sh"
-command_arguments = ["scripts/build-web-worker.sh"]
-
-[[hooks]]
-stage = "post_build"
-command = "python3"
-command_arguments = ["web/prepare-workspace.py"]
+command_arguments = ["-c", "sh scripts/build-web-worker.sh && python3 web/prepare-workspace.py"]

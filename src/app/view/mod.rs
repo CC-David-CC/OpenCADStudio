@@ -824,6 +824,12 @@ impl OpenCADStudio {
 
         let i = self.active_tab;
         let tab = &self.tabs[i];
+        #[cfg(target_arch = "wasm32")]
+        let short_workspace =
+            crate::io::host_bridge::is_workspace_mode() && self.win_size.1 <= 300.0;
+        #[cfg(not(target_arch = "wasm32"))]
+        let short_workspace = false;
+        let compact_start = tab.is_start && (self.compact_workspace_width() || short_workspace);
         // Dynamic input is built before the status bar and properties panel,
         // so seed its shared formatter here rather than relying on either of
         // those later views to have done it for this drawing/thread.
@@ -3451,7 +3457,7 @@ bg={bg_ms:.1}ms n={view_count}"
             self.pending_pick_label().is_some(),
             self.show_node_graph,
         );
-        let center: Element<'_, Message> = if thumbnail_capture_clean {
+        let center: Element<'_, Message> = if thumbnail_capture_clean || compact_start {
             center
         } else {
             // The command line floats over the bottom of the drawing area
@@ -3533,7 +3539,7 @@ bg={bg_ms:.1}ms n={view_count}"
                     self.ribbon.view(
                         self.show_menu_bar
                             .then(|| crate::ui::menu_bar::view(self.menu_context())),
-                        self.ribbon_closed,
+                        self.ribbon_closed || (short_workspace && self.compact_workspace_width()),
                         is_paper,
                         self.tabs[self.active_tab].is_start,
                         self.tabs[self.active_tab].history.undo_stack.len(),
@@ -3557,8 +3563,8 @@ bg={bg_ms:.1}ms n={view_count}"
                     self.file_tabs_above_docks,
                 ));
             }
-            col.push(center_stack)
-                .push({
+            let status_bar = (!compact_start && !short_workspace)
+                .then(|| {
                     let is_model = tab.scene.current_layout == "Model";
                     let scale_pill_enabled = is_model
                         || tab.scene.active_viewport.is_some()
@@ -3698,9 +3704,13 @@ bg={bg_ms:.1}ms n={view_count}"
                                 )
                             }),
                     )
-                })
-                .width(Fill)
-                .height(Fill)
+                });
+            let col = col.push(center_stack);
+            let col = match status_bar {
+                Some(status_bar) => col.push(status_bar),
+                None => col,
+            };
+            col.width(Fill).height(Fill)
         })
         .style(|theme: &Theme| container::Style {
             background: Some(Background::Color(theme.palette().background.base.color)),

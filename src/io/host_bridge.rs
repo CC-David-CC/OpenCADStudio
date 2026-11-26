@@ -105,6 +105,8 @@ mod web {
         RequestSave {
             format: Option<String>,
         },
+        CommandEntry(String),
+        CancelCommand,
         SaveAck {
             save_id: Option<String>,
             ok: bool,
@@ -206,6 +208,14 @@ mod web {
                         "ocs:request-save" => Some(HostCommand::RequestSave {
                             format: str_prop(&data, "format"),
                         }),
+                        "ocs:command-entry" if is_workspace_mode() => str_prop(&data, "value")
+                            .filter(|value| {
+                                value.len() <= 4096 && !value.chars().any(char::is_control)
+                            })
+                            .map(HostCommand::CommandEntry),
+                        "ocs:cancel-command" if is_workspace_mode() => {
+                            Some(HostCommand::CancelCommand)
+                        }
                         "ocs:saved" => Some(HostCommand::SaveAck {
                             save_id: str_prop(&data, "saveId"),
                             ok: bool_prop(&data, "ok").unwrap_or(false),

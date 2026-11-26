@@ -53,7 +53,7 @@ impl OpenCADStudio {
         let mut layers: Vec<Element<'_, Message>> = vec![workspace];
         // Auto-hiding edges draw over the drawing, below floating panels.
         for side in [DockSide::Left, DockSide::Right] {
-            if !self.dock.edge_auto_hide(side) {
+            if !self.dock_edge_auto_hide(side) {
                 continue;
             }
             if let Some(edge) = self.dock_edge(side, tab) {
@@ -74,7 +74,7 @@ impl OpenCADStudio {
         }
         // A docked edge's grab band, over the drawing beside its group.
         for side in [DockSide::Left, DockSide::Right] {
-            if self.dock.edge_auto_hide(side) || !self.dock_edge_expanded(side) {
+            if self.dock_edge_auto_hide(side) || !self.dock_edge_expanded(side) {
                 continue;
             }
             let Some(gi) = self.dock_shown_group(side) else {
@@ -283,7 +283,7 @@ impl OpenCADStudio {
         side: crate::app::config::DockSide,
         tab: &'a DocumentTab,
     ) -> Option<Element<'a, Message>> {
-        if self.dock.edge_auto_hide(side) {
+        if self.dock_edge_auto_hide(side) {
             self.dock_shown_group(side)?;
             return Some(
                 Space::new()
@@ -789,7 +789,7 @@ impl OpenCADStudio {
         tab: &'a DocumentTab,
     ) -> Element<'a, Message> {
         let panel = self.panel_body(id, width, false, tab);
-        if !self.dock.edge_auto_hide(side) {
+        if !self.dock_edge_auto_hide(side) {
             return panel;
         }
         let divider = dock_divider(id, side);

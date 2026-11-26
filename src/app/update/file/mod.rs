@@ -268,6 +268,18 @@ impl OpenCADStudio {
                 self.aec_drop_acknowledged = false;
                 self.on_save_dialog_confirm()
             }
+            HostCommand::CommandEntry(value) => {
+                let blank = value.is_empty();
+                let input = self.update(Message::CommandInput(value));
+                // The native input handler already submits a line with
+                // space-separated arguments and consumes its buffer.
+                if blank || !self.command_line.input.is_empty() {
+                    input.chain(self.update(Message::CommandSubmit))
+                } else {
+                    input
+                }
+            }
+            HostCommand::CancelCommand => self.update(Message::CommandEscape),
             HostCommand::SaveAck {
                 save_id,
                 ok,

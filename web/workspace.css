@@ -1,6 +1,6 @@
 .opencadstudio-workspace {
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr) auto auto;
   min-width: 0;
   min-height: 0;
   color: #d4d4d4;
@@ -13,14 +13,57 @@
   border: 0;
 }
 
-.opencadstudio-workspace footer {
+.opencadstudio-workspace > footer {
   display: flex;
+  flex-direction: row;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
+  margin: 0;
   padding: 4px 8px;
+  color: inherit;
   font: 12px system-ui, sans-serif;
 }
 
 .opencadstudio-workspace footer a {
   color: #8bcaff;
+}
+
+.opencadstudio-commands {
+  display: flex;
+  min-width: 0;
+  gap: 4px;
+  padding: 4px;
+  background: #252525;
+  border-top: 1px solid #444;
+}
+
+.opencadstudio-commands[hidden] {
+  display: none;
+}
+
+.opencadstudio-commands input,
+.opencadstudio-commands button {
+  min-height: 40px;
+  box-sizing: border-box;
+  border: 1px solid #646464;
+  border-radius: 4px;
+  color: #eee;
+  font: 16px system-ui, sans-serif;
+}
+
+.opencadstudio-commands input {
+  flex: 1;
+  min-width: 0;
+  padding: 0 8px;
+  background: #161616;
+}
+
+.opencadstudio-commands button {
+  padding: 0 8px;
+  background: #363636;
+}
+
+.opencadstudio-commands :focus-visible {
+  outline: 2px solid #8bcaff;
+  outline-offset: -2px;
 }

@@ -190,6 +190,7 @@ pub(crate) struct CollapsePanels<'a> {
     on_float: Option<Box<dyn Fn(String, Point) -> Message + 'a>>,
     /// Center the panels in the row while they have room to spare.
     centered: bool,
+    wrap_overflow: bool,
 }
 
 /// How far the pointer moves from the press before the press becomes a drag.
@@ -345,6 +346,7 @@ impl<'a> CollapsePanels<'a> {
             on_reorder: None,
             on_float: None,
             centered: false,
+            wrap_overflow: false,
         }
     }
 
@@ -353,6 +355,12 @@ impl<'a> CollapsePanels<'a> {
     /// lays out as before.
     pub fn centered(mut self, centered: bool) -> Self {
         self.centered = centered;
+        self
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn wrap_overflow(mut self, enabled: bool) -> Self {
+        self.wrap_overflow = enabled;
         self
     }
 
@@ -563,7 +571,7 @@ impl<'a> Widget<Message, Theme, Renderer> for CollapsePanels<'a> {
         // padding) so more of them stay on-screen before anything is clipped. In
         // Auto this only fires when everything is already tight, so it never
         // overlaps a full/compact panel; a forced density is left to overflow.
-        let squeeze = if auto {
+        let squeeze = if auto && !self.wrap_overflow {
             let width_of = |lv: Level, i: usize| match lv {
                 Level::Full => widths[i].full,
                 Level::Compact => widths[i].compact,
@@ -649,6 +657,33 @@ impl<'a> Widget<Message, Theme, Renderer> for CollapsePanels<'a> {
         } else {
             placed.iter().map(|(_, _, h)| *h).fold(self.row_h, f32::max)
         };
+        // In the embedded workspace, panels that still do not fit at their
+        // tightest size keep their own row targets instead of clipping.
+        if self.wrap_overflow && auto && max_w.is_finite() && x > max_w && left.is_none() {
+            state.drag = None;
+            let gap = 4.0;
+            let (mut row_x, mut row_y) = (0.0, 0.0);
+            let children = placed
+                .into_iter()
+                .map(|(node, _, height)| {
+                    let width = node.size().width;
+                    if row_x > 0.0 && row_x + gap + width > max_w {
+                        row_x = 0.0;
+                        row_y += row_h;
+                    }
+                    let x = if row_x > 0.0 { row_x + gap } else { 0.0 };
+                    let position = Point::new(x, row_y + (row_h - height) / 2.0);
+                    row_x = x + width;
+                    node.move_to(position)
+                })
+                .collect();
+            let height = row_y + row_h;
+            if let Some(out) = &self.height_out {
+                out.store(height.to_bits(), Ordering::Relaxed);
+            }
+            return layout::Node::with_children(Size::new(max_w, height), children);
+        }
+
         let children: Vec<layout::Node> = placed
             .into_iter()
             .map(|(node, node_x, h)| {

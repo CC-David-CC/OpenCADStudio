@@ -4,6 +4,20 @@ The CAD launcher opens the browser editor with its Rust drawing engine and the l
 
 The launcher uses the ordinary editor toolbar and command line. Each drawing tab keeps its own Files revision. Drawing sizes are subject to the WebOS Files limit. Desktop-only workflows are described in the [main readme](../README.md#desktop-or-web).
 
+## Drawing in a narrow window
+
+Use **New Drawing** and the **Draw** ribbon to start a drawing. The panel
+icons at the side open and close their panels. To enter a command or
+coordinates with a phone keyboard, tap **Command or coordinates** below
+the drawing. For a line, enter `LINE`, `#10,20`, and `#60,42` separately.
+Tap **Esc** to finish the line and enter `ZOOMEXTENTS` to fit the drawing.
+
+Tap the **Save** button beside the command field to save a new drawing as
+DXF. Choose a folder in My files and enter a name. WebOS adds the suffix
+when needed. Save again to update the existing file in its current format.
+To select DXF or DWG explicitly, use **Save As** in the editor. Use
+**Open With… → OpenCADStudio** in Files to return to the drawing.
+
 ## Build
 
 Install Rust with the `wasm32-unknown-unknown` target, Trunk, Python 3, and the `wasm-bindgen-cli` version pinned by `Cargo.lock`. From the source root run:

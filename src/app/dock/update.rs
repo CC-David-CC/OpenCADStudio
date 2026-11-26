@@ -22,7 +22,15 @@ impl OpenCADStudio {
                 if self.dock.show_group_of(id) {
                     self.save_config();
                 }
-                self.dock_begin(DockDrag::moving(id, None), Some(id));
+                if self.compact_workspace_width() {
+                    let visible = self.dock.location(id).is_some_and(|(side, group)| {
+                        self.dock_peek
+                            .is_some_and(|peek| self.dock.location(peek) == Some((side, group)))
+                    });
+                    self.dock_peek = (!visible).then_some(id);
+                } else {
+                    self.dock_begin(DockDrag::moving(id, None), Some(id));
+                }
             }
             DockMsg::GroupGrab(side, gi) => {
                 // The strips are rebuilt under the drag's capture layer, so
@@ -210,7 +218,10 @@ impl OpenCADStudio {
                 // hover: after a short rest it reveals the hovered pallet's
                 // group. Otherwise groups switch on click. Ignored mid-drag,
                 // when the pointer is over the preview rather than the strip.
-                if self.dock_drag.is_none() && self.dock.auto_hides(id) {
+                if self.dock_drag.is_none()
+                    && !self.compact_workspace_width()
+                    && self.dock.auto_hides(id)
+                {
                     if self.dock_peek == Some(id) {
                         self.dock_hover_cancel();
                     } else {
@@ -225,6 +236,7 @@ impl OpenCADStudio {
             }
             DockMsg::HoverExit => {
                 if self.dock_drag.is_none()
+                    && !self.compact_workspace_width()
                     && self.dock_peek.is_some_and(|id| self.dock.auto_hides(id))
                 {
                     return self.dock_hover_arm(HoverPending::Hide);
@@ -238,7 +250,10 @@ impl OpenCADStudio {
                 }
             }
             DockMsg::HoverSettled(gen) => {
-                if gen == self.dock_hover_gen && self.dock_drag.is_none() {
+                if gen == self.dock_hover_gen
+                    && self.dock_drag.is_none()
+                    && !self.compact_workspace_width()
+                {
                     match self.dock_hover_pending.take() {
                         Some(HoverPending::Reveal(id)) if self.dock.auto_hides(id) => {
                             self.dock_reveal(id)
@@ -978,13 +993,24 @@ impl OpenCADStudio {
         }
     }
 
+    pub(crate) fn compact_workspace_width(&self) -> bool {
+        #[cfg(target_arch = "wasm32")]
+        return crate::io::host_bridge::is_workspace_mode() && self.win_size.0 <= 620.0;
+        #[cfg(not(target_arch = "wasm32"))]
+        false
+    }
+
+    pub(crate) fn dock_edge_auto_hide(&self, side: crate::app::config::DockSide) -> bool {
+        self.compact_workspace_width() || self.dock.edge_auto_hide(side)
+    }
+
     /// Whether `side` draws its shown group beside the icon strip: always,
     /// unless the edge auto-hides and none of the group's icons is hovered.
     pub(crate) fn dock_edge_expanded(&self, side: crate::app::config::DockSide) -> bool {
         let Some(gi) = self.dock_shown_group(side) else {
             return false;
         };
-        !self.dock.edge_auto_hide(side)
+        !self.dock_edge_auto_hide(side)
             || self
                 .dock_peek
                 .is_some_and(|e| self.dock_group_visible(side, gi).contains(&e))
@@ -1073,7 +1099,7 @@ impl OpenCADStudio {
         // edge that doesn't auto-hide always shows it.
         let inset = |side: DockSide| match self.dock_shown_group(side) {
             None => 0.0,
-            Some(_) if self.dock.edge_auto_hide(side) => crate::ui::dock::DOCK_STRIP_W,
+            Some(_) if self.dock_edge_auto_hide(side) => crate::ui::dock::DOCK_STRIP_W,
             // The grab band lies over the drawing: it takes no room.
             Some(gi) => crate::ui::dock::DOCK_STRIP_W + self.dock_group_width(side, gi),
         };

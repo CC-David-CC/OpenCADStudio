@@ -41,6 +41,29 @@ export function mount(host) {
   style.href = new URL('./workspace.css', import.meta.url).href;
   const frame = document.createElement('iframe');
   frame.title = 'OpenCADStudio editor';
+  const commands = document.createElement('form');
+  commands.className = 'opencadstudio-commands';
+  commands.hidden = true;
+  const command = document.createElement('input');
+  command.type = 'text';
+  command.setAttribute('aria-label', 'CAD command or coordinates');
+  command.setAttribute('enterkeyhint', 'go');
+  command.setAttribute('autocapitalize', 'off');
+  command.autocomplete = 'off';
+  command.spellcheck = false;
+  command.placeholder = 'Command or coordinates';
+  command.maxLength = 1024;
+  const run = document.createElement('button');
+  run.textContent = 'Enter';
+  run.type = 'submit';
+  const cancel = document.createElement('button');
+  cancel.textContent = 'Esc';
+  cancel.setAttribute('aria-label', 'Cancel CAD command');
+  cancel.type = 'button';
+  const saveDrawing = document.createElement('button');
+  saveDrawing.textContent = 'Save';
+  saveDrawing.type = 'button';
+  commands.append(command, run, cancel, saveDrawing);
   const footer = document.createElement('footer');
   const status = document.createElement('span');
   status.setAttribute('role', 'status');
@@ -50,7 +73,18 @@ export function mount(host) {
   source.download = '';
   source.textContent = 'Source';
   footer.append(status, source);
-  element.append(style, frame, footer);
+  element.append(style, frame, commands, footer);
+
+  let compact = false;
+  function updateCommands() {
+    commands.hidden = !compact || typeof activeTab !== 'string' || !tabId.test(activeTab);
+  }
+  const size = new ResizeObserver(([{contentRect}]) => {
+    compact = contentRect.width <= 620 || contentRect.height <= 400;
+    updateCommands();
+  });
+  size.observe(element);
+  signal.addEventListener('abort', () => size.disconnect(), {once: true});
 
   function workspace() {
     if (signal.aborted || owner !== host.storage.workspaceOwner() || session !== host.session() || !context?.valid()) {
@@ -130,6 +164,7 @@ export function mount(host) {
       const folder = await pick(true);
       if (folder == null) throw Error('Save cancelled.');
       const value = name.replace(/\.(dxf|dwg)$/i, '') + (saveAs && previous ? '-copy' : '') + ext;
+      if (compact) host.ui.enableKeyboard?.();
       const chosen = await host.ui.prompt('File name', {
         title: 'Save OpenCADStudio drawing',
         value,
@@ -192,6 +227,7 @@ export function mount(host) {
         break;
       case 'ocs:state':
         activeTab = data.tabId;
+        updateCommands();
         dirty = data.dirty === true;
         saving = data.saving === true;
         if (!opening) bindActive();
@@ -204,6 +240,7 @@ export function mount(host) {
           tabs.set(data.tabId, {path: opening.path, sha256: opening.sha256});
           opening = null;
           activeTab = data.tabId;
+          updateCommands();
           report('Opened ' + data.name + ' from Files.');
           bindActive();
         }
@@ -230,6 +267,36 @@ export function mount(host) {
   started.promise.catch(() => {});
   signal.addEventListener('abort', () => started.reject(signal.reason), {once: true});
   const busy = () => picking || opening || saving || writing || transferring;
+  function sendCommand(type, fields) {
+    if (commands.hidden || busy()) return false;
+    try {
+      workspace();
+      send(type, fields);
+      return true;
+    } catch (error) {
+      report(error.message);
+      return false;
+    }
+  }
+
+  command.addEventListener('pointerdown', () => host.ui.enableKeyboard?.(), {signal});
+  commands.addEventListener('submit', event => {
+    event.preventDefault();
+    if (sendCommand('ocs:command-entry', {value: command.value})) command.value = '';
+  }, {signal});
+  function cancelCommand() {
+    if (sendCommand('ocs:cancel-command')) command.value = '';
+  }
+  cancel.addEventListener('click', cancelCommand, {signal});
+  command.addEventListener('keydown', event => {
+    if (event.key !== 'Escape' || event.isComposing) return;
+    event.preventDefault();
+    event.stopPropagation();
+    cancelCommand();
+  }, {signal});
+  saveDrawing.addEventListener('click', () => {
+    sendCommand('ocs:request-save', {format: tabs.has(activeTab) ? null : 'dxf'});
+  }, {signal});
   window.addEventListener('beforeunload', event => {
     if (!dirty && !busy()) return;
     event.preventDefault();

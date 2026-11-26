@@ -1742,6 +1742,8 @@ impl Ribbon {
                 .report_tight(self.collapse_tight.clone())
                 .mode(mode)
                 .centered(self.layout.centered);
+            #[cfg(target_arch = "wasm32")]
+            let collapse = collapse.wrap_overflow(crate::io::host_bridge::is_workspace_mode());
             // A floating panel dropped on it docks here.
             PosReport::new(TOOL_AREA_ID, collapse).into()
         } else {
